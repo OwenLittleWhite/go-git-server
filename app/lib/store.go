@@ -87,17 +87,19 @@ func (s *Store) SaveFile(p *FileParams) (commitId string, err error) {
 		p.author.When = time.Now()
 	}
 	repo, err := s.OpenRepository(p.repoPath)
+
+	defer repo.Free()
+
 	if err != nil {
 		return
 	}
 	ref, err := repo.References.Lookup(p.ref)
+	defer ref.Free()
 	if err != nil {
 		return
 	}
 	refCommit, err := repo.LookupCommit(ref.Target())
-	if err != nil {
-		return
-	}
+	defer refCommit.Free()
 	if err != nil {
 		return
 	}
@@ -107,6 +109,7 @@ func (s *Store) SaveFile(p *FileParams) (commitId string, err error) {
 	}
 
 	treeBuilder, err := repo.TreeBuilder()
+	defer treeBuilder.Free()
 	if err != nil {
 		return
 	}
@@ -116,6 +119,7 @@ func (s *Store) SaveFile(p *FileParams) (commitId string, err error) {
 		return
 	}
 	tree, err := repo.LookupTree(treeId)
+	defer tree.Free()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -125,6 +129,55 @@ func (s *Store) SaveFile(p *FileParams) (commitId string, err error) {
 	}
 
 	return commitOId.String(), nil
+}
+
+func (s *Store) DeleteFile(p *FileParams) (commitId string, err error) {
+	if p.repoPath == "" || p.filePath == "" {
+		return "", fmt.Errorf("should have repoPath and filePath params")
+	}
+	if p.ref == "" {
+		p.ref = "master"
+	}
+	p.ref = formatRef(p.ref, p.filePath)
+	if p.message == "" {
+		p.message = fmt.Sprintf("delete file %s", p.filePath)
+	}
+	if p.author == nil {
+		p.author = s.author
+		p.author.When = time.Now()
+	}
+	repo, err := s.OpenRepository(p.repoPath)
+	defer repo.Free()
+	if err != nil {
+		return
+	}
+	ref, err := repo.References.Lookup(p.ref)
+
+	if err != nil {
+		return
+	}
+	refCommit, err := repo.LookupCommit(ref.Target())
+	if err != nil {
+		return
+	}
+	latestTree, err := refCommit.Tree()
+	treeBuilder, err := repo.TreeBuilderFromTree(latestTree)
+	err = treeBuilder.Remove(p.filePath)
+	if err != nil {
+		fmt.Printf("Err when remove: %v\n", err)
+		return "", nil
+	}
+	oId, err := treeBuilder.Write()
+	if err != nil {
+		return
+	}
+	tree, err := repo.LookupTree(oId)
+	if err != nil {
+		return
+	}
+	commitOId, err := repo.CreateCommit(p.ref, p.author, p.author, p.message, tree, refCommit)
+	commitId = commitOId.String()
+	return
 }
 
 func formatRef(ref string, filePath string) string {

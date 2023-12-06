@@ -23,3 +23,13 @@ func TestSaveFile(t *testing.T) {
 	}
 	fmt.Printf("SaveFile, %s", result)
 }
+
+func TestDeleteFile(t *testing.T) {
+	store := NewStore()
+	result, err := store.DeleteFile(&FileParams{repoPath: "test", filePath: "hello3.txt"})
+	if err != nil {
+		fmt.Printf("Err, %s\n", err)
+		t.Fail()
+	}
+	fmt.Printf("Delete, %s", result)
+}
