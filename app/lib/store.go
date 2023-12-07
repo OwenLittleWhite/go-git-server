@@ -24,6 +24,7 @@ type FileParams struct {
 	message  string
 	ref      string
 	author   *git.Signature
+	commitId string
 	// encoding string
 }
 
@@ -74,9 +75,6 @@ func (s *Store) OpenRepository(repoPath string) (repo *git.Repository, err error
 func (s *Store) SaveFile(p *FileParams) (commitId string, err error) {
 	if p.repoPath == "" || p.filePath == "" {
 		return "", fmt.Errorf("should have repoPath and filePath params")
-	}
-	if p.ref == "" {
-		p.ref = "master"
 	}
 	p.ref = formatRef(p.ref, p.filePath)
 	if p.message == "" {
@@ -135,9 +133,6 @@ func (s *Store) DeleteFile(p *FileParams) (commitId string, err error) {
 	if p.repoPath == "" || p.filePath == "" {
 		return "", fmt.Errorf("should have repoPath and filePath params")
 	}
-	if p.ref == "" {
-		p.ref = "master"
-	}
 	p.ref = formatRef(p.ref, p.filePath)
 	if p.message == "" {
 		p.message = fmt.Sprintf("delete file %s", p.filePath)
@@ -180,6 +175,52 @@ func (s *Store) DeleteFile(p *FileParams) (commitId string, err error) {
 	return
 }
 
+func (s *Store) GetBlob(p *FileParams) (content string, commitId string, err error) {
+	if p.repoPath == "" || p.filePath == "" {
+		return "", "", fmt.Errorf("should have repoPath and filePath params")
+	}
+	p.ref = formatRef(p.ref, p.filePath)
+	repo, err := s.OpenRepository(p.repoPath)
+	defer repo.Free()
+	var tree *git.Tree
+	if p.commitId != "" {
+		oId, err := git.NewOid(p.commitId)
+		if err != nil {
+			return "", "", fmt.Errorf("provided commitId error: %v", err)
+		}
+		commit, err := repo.LookupCommit(oId)
+		if err != nil {
+			return "", "", err
+		}
+		tree, err = commit.Tree()
+		if err != nil {
+			return "", "", err
+		}
+	} else {
+		ref, err := repo.References.Lookup(p.ref)
+		if err != nil {
+			return "", "", err
+		}
+		oId := ref.Target()
+		commitId = oId.String()
+		fmt.Printf("commitId: %v\n", commitId)
+		commit, err := repo.LookupCommit(oId)
+		if err != nil {
+			return "", "", err
+		}
+		tree, err = commit.Tree()
+		fmt.Printf("tree: %v\n", tree)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	entry := tree.EntryByName(p.filePath)
+	fmt.Printf("entry: %v\n", entry)
+	blob, err := repo.LookupBlob(entry.Id)
+	content = string(blob.Contents())
+	return
+}
+
 func formatRef(ref string, filePath string) string {
 	if len(ref) > 0 && strings.Index(ref, "refs/heads") == 0 {
 		return ref
@@ -190,5 +231,6 @@ func formatRef(ref string, filePath string) string {
 		}
 		return _path.Join("refs", "heads", "self", ref)
 	}
-	return _path.Join("refs", "heads", "sys", base64.StdEncoding.EncodeToString([]byte(filePath)))
+	// return _path.Join("refs", "heads", "sys", base64.StdEncoding.EncodeToString([]byte(filePath)))
+	return _path.Join("refs", "heads", "master")
 }
